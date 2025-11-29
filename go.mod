@@ -1,4 +1,4 @@
-module github.com/xcaddyplugins/caddy-dns-godaddy
+module github.com/manuman94/caddy-dns-godaddy
 
 go 1.25
 
