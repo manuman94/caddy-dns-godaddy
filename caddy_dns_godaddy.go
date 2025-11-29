@@ -192,48 +192,61 @@ func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns
 
 // createRecord creates a single DNS record
 func (p *Provider) createRecord(ctx context.Context, zone string, record libdns.Record) error {
-	domain := strings.TrimSuffix(zone, ".")
-	recordName := strings.TrimSuffix(record.RR().Name, "."+domain)
-	if recordName == domain {
-		recordName = "@"
-	}
-	rr := record.RR()
-	if rr.TTL < 600 {
-    	rr.TTL = 600
+    domain := strings.TrimSuffix(zone, ".")
+    rr := record.RR()
+
+    // Normalize record name
+    recordName := strings.TrimSuffix(rr.Name, "."+domain)
+    if recordName == domain {
+        recordName = "@"
     }
-	godaddyRecord := libdns.RR{
-		Type: rr.Type,
-		Name: recordName,
-		Data: rr.Data,
-		TTL:  rr.TTL,
-	}
 
-	recordsArray := []libdns.RR{godaddyRecord}
-	jsonData, err := json.Marshal(recordsArray)
-	if err != nil {
-		return err
-	}
+    // TTL mínimo de GoDaddy
+    ttl := int(rr.TTL)
+    if ttl < 600 {
+        ttl = 600
+    }
 
-	url := fmt.Sprintf("https://api.godaddy.com/v1/domains/%s/records", domain)
+    // GoDaddy FORMAT:
+    // PUT /domains/{domain}/records/{type}/{name}
+    // body: [ {"data":"VALUE","ttl":600} ]
 
-	req, err := http.NewRequestWithContext(ctx, "PATCH", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return err
-	}
+    body := []map[string]interface{}{
+        {
+            "data": rr.Data,
+            "ttl":  ttl,
+        },
+    }
 
-	resp, err := p.request(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+    jsonBody, err := json.Marshal(body)
+    if err != nil {
+        return err
+    }
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to create DNS record: %d %s", resp.StatusCode, string(body))
-	}
+    url := fmt.Sprintf(
+        "https://api.godaddy.com/v1/domains/%s/records/%s/%s",
+        domain, rr.Type, recordName,
+    )
 
-	return nil
+    req, err := http.NewRequestWithContext(ctx, "PUT", url, bytes.NewBuffer(jsonBody))
+    if err != nil {
+        return err
+    }
+
+    resp, err := p.request(req)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        body, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("failed to create DNS record: %d %s", resp.StatusCode, string(body))
+    }
+
+    return nil
 }
+
 
 // deleteRecord deletes a single DNS record
 func (p *Provider) deleteRecord(ctx context.Context, zone string, record libdns.Record) error {
