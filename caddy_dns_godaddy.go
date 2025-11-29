@@ -198,6 +198,9 @@ func (p *Provider) createRecord(ctx context.Context, zone string, record libdns.
 		recordName = "@"
 	}
 	rr := record.RR()
+	if rr.TTL < 600 {
+    	rr.TTL = 600
+    }
 	godaddyRecord := libdns.RR{
 		Type: rr.Type,
 		Name: recordName,
